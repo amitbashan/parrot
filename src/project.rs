@@ -9,12 +9,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::document::Document;
 
-pub struct ServerProject {
+pub struct Project {
     path: PathBuf,
     open_documents: HashMap<PathBuf, Document>,
 }
 
-impl ServerProject {
+impl Project {
     pub fn path(&self) -> &PathBuf {
         &self.path
     }
@@ -44,18 +44,13 @@ impl ServerProject {
     }
 }
 
-impl From<PathBuf> for ServerProject {
+impl From<PathBuf> for Project {
     fn from(value: PathBuf) -> Self {
         Self {
             path: value,
             open_documents: Default::default(),
         }
     }
-}
-
-#[derive(Default)]
-pub struct ClientProject {
-    open_documents: HashMap<PathBuf, Document>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

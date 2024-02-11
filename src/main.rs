@@ -1,9 +1,7 @@
-#![feature(entry_insert)]
-
 use std::{net::SocketAddr, path::PathBuf};
 
 use clap::Parser;
-use project::ServerProject;
+use project::Project;
 use server::Server;
 
 mod client;
@@ -24,7 +22,7 @@ struct CLI {
 async fn main() -> anyhow::Result<()> {
     simple_logger::init()?;
     let cli = CLI::parse();
-    let mut server = Server::bind(cli.address, ServerProject::from(cli.project)).await?;
+    let mut server = Server::bind(cli.address, Project::from(cli.project)).await?;
     server.start().await?;
     Ok(())
 }

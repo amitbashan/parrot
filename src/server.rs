@@ -6,7 +6,7 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::{
     client::{request, Request},
-    project::{ServerProject, Tree},
+    project::{Project, Tree},
 };
 
 pub use response::Response;
@@ -26,11 +26,11 @@ pub mod response {
 
 pub struct Server {
     listener: TcpListener,
-    project: ServerProject,
+    project: Project,
 }
 
 impl Server {
-    pub async fn bind<A: ToSocketAddrs>(address: A, project: ServerProject) -> io::Result<Self> {
+    pub async fn bind<A: ToSocketAddrs>(address: A, project: Project) -> io::Result<Self> {
         Ok(Self {
             listener: TcpListener::bind(address).await?,
             project,

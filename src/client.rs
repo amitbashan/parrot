@@ -4,7 +4,7 @@ use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpStream, ToSocketAddrs};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-use crate::{project::ClientProject, server::Response};
+use crate::server::Response;
 
 pub use request::Request;
 
@@ -46,7 +46,6 @@ pub mod request {
 
 pub struct Client {
     stream: Framed<TcpStream, LengthDelimitedCodec>,
-    project: ClientProject,
 }
 
 impl Client {
@@ -56,7 +55,6 @@ impl Client {
                 TcpStream::connect(server_address).await?,
                 LengthDelimitedCodec::new(),
             ),
-            project: Default::default(),
         })
     }
 
