@@ -1,7 +1,7 @@
-use std::io;
+use std::{collections::HashMap, io, net::SocketAddr};
 
 use futures::{SinkExt, StreamExt};
-use tokio::net::{TcpListener, ToSocketAddrs};
+use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::{
@@ -21,12 +21,24 @@ pub mod response {
         Acknowledge,
         Document(Document),
         ProjectTree(Tree),
+        Notify(notify::Notification),
+    }
+
+    pub mod notify {
+        use crate::client::request::update::Commit;
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Debug, Serialize, Deserialize, Clone)]
+        pub enum Notification {
+            Commit(Commit),
+        }
     }
 }
 
 pub struct Server {
     listener: TcpListener,
     project: Project,
+    clients: HashMap<SocketAddr, Framed<TcpStream, LengthDelimitedCodec>>,
 }
 
 impl Server {
@@ -34,6 +46,7 @@ impl Server {
         Ok(Self {
             listener: TcpListener::bind(address).await?,
             project,
+            clients: Default::default(),
         })
     }
 
@@ -50,19 +63,18 @@ impl Server {
         }
     }
 
-    pub async fn accept(&mut self) -> anyhow::Result<()> {
+    async fn accept(&mut self) -> anyhow::Result<()> {
         let (stream, address) = self.listener.accept().await?;
-        log::info!("Accepting connection: {address}");
-        let mut stream = Framed::new(stream, LengthDelimitedCodec::new());
+        log::info!("Accepting connection from: {address}");
+        let stream = self.register_client(stream, address);
         let request = stream.next().await.unwrap()?;
         let request: Request = flexbuffers::from_slice(&request)?;
-        let response = self.handle_request(request)?;
-        let response = flexbuffers::to_vec(response)?;
-        stream.send(response.into()).await?;
+        let response = self.handle_request(request).await?;
+        self.respond(address, response).await?;
         Ok(())
     }
 
-    fn handle_request(&mut self, request: Request) -> anyhow::Result<Response> {
+    async fn handle_request(&mut self, request: Request) -> anyhow::Result<Response> {
         match request {
             Request::Fetch(fetch) => match fetch {
                 request::Fetch::ProjectTree => {
@@ -76,27 +88,69 @@ impl Server {
             },
             Request::Update(update) => match update {
                 request::Update::Commit(commit) => {
-                    self.commit(commit)?;
+                    self.commit(commit).await?;
                     Ok(Response::Acknowledge)
                 }
             },
         }
     }
 
-    fn commit(&mut self, commit: request::update::Commit) -> io::Result<()> {
+    fn register_client(
+        &mut self,
+        stream: TcpStream,
+        address: SocketAddr,
+    ) -> &mut Framed<TcpStream, LengthDelimitedCodec> {
+        if !self.clients.contains_key(&address) {
+            log::info!("Registering new client from: {address}");
+            self.clients
+                .insert(address, Framed::new(stream, LengthDelimitedCodec::new()));
+        }
+        self.get_client_mut(address)
+    }
+
+    fn get_client_mut(
+        &mut self,
+        address: SocketAddr,
+    ) -> &mut Framed<TcpStream, LengthDelimitedCodec> {
+        self.clients.get_mut(&address).unwrap()
+    }
+
+    async fn respond(&mut self, address: SocketAddr, response: Response) -> anyhow::Result<()> {
+        let stream = self.get_client_mut(address);
+        let response = flexbuffers::to_vec(response)?;
+        stream.send(response.into()).await?;
+        Ok(())
+    }
+
+    async fn commit(&mut self, commit: request::update::Commit) -> anyhow::Result<()> {
         let request::update::Commit {
-            document_path,
-            insertions,
-            deletions,
+            ref document_path,
+            ref insertions,
+            ref deletions,
         } = commit;
-        let document = self.project.open_document_mut(&document_path)?;
+        let document = self.project.open_document_mut(document_path)?;
 
         for range in deletions {
-            document.remove(range);
+            document.remove(range.clone());
         }
 
         for (index, text) in insertions {
-            document.insert(index, &text);
+            document.insert(*index, text.as_str());
+        }
+
+        self.notify(&response::notify::Notification::Commit(commit))
+            .await?;
+
+        Ok(())
+    }
+
+    async fn notify(
+        &mut self,
+        notification: &response::notify::Notification,
+    ) -> anyhow::Result<()> {
+        for client in self.clients.keys().copied().collect::<Vec<_>>() {
+            self.respond(client, Response::Notify(notification.clone()))
+                .await?;
         }
 
         Ok(())
