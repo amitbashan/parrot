@@ -1,0 +1,19 @@
+[package]
+name = "parrot"
+authors = ["Amit Bashan <amitba@netanya.ac.il>"]
+description = "A collaborative text editing protocol"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "*", features = ["derive", "string"] }
+log = "*"
+simple_logger = "*"
+jumprope = "*"
+petgraph = { version = "*", features = ["serde-1"] }
+tokio = { version = "*", features = ["full"] }
+tokio-util = { version = "*", features = ["codec"] }
+futures = "*"
+serde = { version = "*", features = ["derive"] }
+flexbuffers = "*"
+anyhow = "*"
