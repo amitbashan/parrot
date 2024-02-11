@@ -24,3 +24,5 @@ Options:
 - `Acknowledge` - server indicating acknowledgement (success status) for a certain modification submitted by a client
 - `Document` - a document requested by a client
 - `ProjectTree(tree)` - the project's file tree to allow a client to request files within the project
+- `Notify`
+    - `Commit(commit)` - notify other clients of commits

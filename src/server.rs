@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io, net::SocketAddr};
+use std::{
+    collections::{HashMap, HashSet},
+    io,
+    net::SocketAddr,
+};
 
 use futures::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
@@ -69,12 +73,16 @@ impl Server {
         let stream = self.register_client(stream, address);
         let request = stream.next().await.unwrap()?;
         let request: Request = flexbuffers::from_slice(&request)?;
-        let response = self.handle_request(request).await?;
+        let response = self.handle_request(address, request).await?;
         self.respond(address, response).await?;
         Ok(())
     }
 
-    async fn handle_request(&mut self, request: Request) -> anyhow::Result<Response> {
+    async fn handle_request(
+        &mut self,
+        address: SocketAddr,
+        request: Request,
+    ) -> anyhow::Result<Response> {
         match request {
             Request::Fetch(fetch) => match fetch {
                 request::Fetch::ProjectTree => {
@@ -88,7 +96,7 @@ impl Server {
             },
             Request::Update(update) => match update {
                 request::Update::Commit(commit) => {
-                    self.commit(commit).await?;
+                    self.commit(address, commit).await?;
                     Ok(Response::Acknowledge)
                 }
             },
@@ -122,7 +130,11 @@ impl Server {
         Ok(())
     }
 
-    async fn commit(&mut self, commit: request::update::Commit) -> anyhow::Result<()> {
+    async fn commit(
+        &mut self,
+        address: SocketAddr,
+        commit: request::update::Commit,
+    ) -> anyhow::Result<()> {
         let request::update::Commit {
             ref document_path,
             ref insertions,
@@ -138,7 +150,7 @@ impl Server {
             document.insert(*index, text.as_str());
         }
 
-        self.notify(&response::notify::Notification::Commit(commit))
+        self.notify(address, &response::notify::Notification::Commit(commit))
             .await?;
 
         Ok(())
@@ -146,9 +158,16 @@ impl Server {
 
     async fn notify(
         &mut self,
+        notifier: SocketAddr,
         notification: &response::notify::Notification,
     ) -> anyhow::Result<()> {
-        for client in self.clients.keys().copied().collect::<Vec<_>>() {
+        let clients = self
+            .clients
+            .keys()
+            .filter(|client| client != &&notifier)
+            .copied()
+            .collect::<HashSet<_>>();
+        for client in clients {
             self.respond(client, Response::Notify(notification.clone()))
                 .await?;
         }
