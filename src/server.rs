@@ -83,6 +83,7 @@ impl Server {
         address: SocketAddr,
         request: Request,
     ) -> anyhow::Result<Response> {
+        log::info!("Handling request from client with address {address}");
         match request {
             Request::Fetch(fetch) => match fetch {
                 request::Fetch::ProjectTree => {
@@ -126,6 +127,7 @@ impl Server {
     async fn respond(&mut self, address: SocketAddr, response: Response) -> anyhow::Result<()> {
         let stream = self.get_client_mut(address);
         let response = flexbuffers::to_vec(response)?;
+        log::info!("Responding to client with address {address}");
         stream.send(response.into()).await?;
         Ok(())
     }
@@ -150,6 +152,7 @@ impl Server {
             document.insert(*index, text.as_str());
         }
 
+        log::info!("Committed changes from client with address {address}");
         self.notify(address, &response::notify::Notification::Commit(commit))
             .await?;
 
@@ -167,10 +170,13 @@ impl Server {
             .filter(|client| client != &&notifier)
             .copied()
             .collect::<HashSet<_>>();
+
         for client in clients {
             self.respond(client, Response::Notify(notification.clone()))
                 .await?;
         }
+
+        log::info!("Notified other clients of changes submitted by client with address {notifier}");
 
         Ok(())
     }

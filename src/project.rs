@@ -1,6 +1,7 @@
+use core::fmt;
 use std::{
     collections::HashMap,
-    fs, io,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -8,6 +9,25 @@ use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 
 use crate::document::Document;
+
+#[derive(Debug)]
+pub enum ProjectError {
+    OutOfBounds,
+}
+
+impl fmt::Display for ProjectError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::OutOfBounds => "Object requested by client is out of the project's bounds",
+            }
+        )
+    }
+}
+
+impl std::error::Error for ProjectError {}
 
 pub struct Project {
     path: PathBuf,
@@ -19,7 +39,22 @@ impl Project {
         &self.path
     }
 
-    fn open_document_if_not_loaded<P: AsRef<Path>>(&mut self, relative_path: P) -> io::Result<()> {
+    fn is_valid_path<P: AsRef<Path>>(&self, path: P) -> bool {
+        if let Ok(resolved_path) = fs::canonicalize(path) {
+            resolved_path.starts_with(&self.path)
+        } else {
+            false
+        }
+    }
+
+    fn open_document_if_not_loaded<P: AsRef<Path>>(
+        &mut self,
+        relative_path: P,
+    ) -> anyhow::Result<()> {
+        if !self.is_valid_path(self.path.join(&relative_path)) {
+            return Err(ProjectError::OutOfBounds.into());
+        }
+
         if !self.open_documents.contains_key(relative_path.as_ref()) {
             let path = self.path.join(&relative_path);
             let text = fs::read_to_string(path)?;
@@ -30,7 +65,7 @@ impl Project {
         Ok(())
     }
 
-    pub fn open_document<P: AsRef<Path>>(&mut self, relative_path: P) -> io::Result<&Document> {
+    pub fn open_document<P: AsRef<Path>>(&mut self, relative_path: P) -> anyhow::Result<&Document> {
         self.open_document_if_not_loaded(&relative_path)?;
         Ok(&self.open_documents[relative_path.as_ref()])
     }
@@ -38,7 +73,7 @@ impl Project {
     pub fn open_document_mut<P: AsRef<Path>>(
         &mut self,
         relative_path: P,
-    ) -> io::Result<&mut Document> {
+    ) -> anyhow::Result<&mut Document> {
         self.open_document_if_not_loaded(&relative_path)?;
         Ok(self.open_documents.get_mut(relative_path.as_ref()).unwrap())
     }
